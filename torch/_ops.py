@@ -99,6 +99,9 @@ class OpOverloadPacket:
         if key == '__file__':
             return 'torch.ops'
 
+        if key is '__name__':
+            return getattr(self._op, key)
+
         try:
             use_key = '' if key == 'default' else key
             # TODO: disallow access to overloads registered by JIT
@@ -109,13 +112,14 @@ class OpOverloadPacket:
             setattr(self, key, overload)
             return overload
         except RuntimeError:
-            try:
-                # This is added to maintain bc in case the user queries an attribute that exists on `self._op`
-                # which used to be returned before instead of the OpOverloadPacket
-                out = getattr(self._op, key)
-                return out
-            except AttributeError:
-                raise AttributeError("'{}' object has no attribute '{}'".format(str(self), key)) from None
+            raise AttributeError("'{}' object has no attribute '{}'".format(str(self), key)) from None
+        #     try:
+        #         # This is added to maintain bc in case the user queries an attribute that exists on `self._op`
+        #         # which used to be returned before instead of the OpOverloadPacket
+        #         out = getattr(self._op, key)
+        #         return out
+        #     except AttributeError:
+        #         raise AttributeError("'{}' object has no attribute '{}'".format(str(self), key)) from None
 
     def __call__(self, *args, **kwargs):
         # overloading __call__ to ensure torch.ops.foo.bar() is still callable from JIT
@@ -170,13 +174,12 @@ class _OpNamespace(types.ModuleType):
         # with qualified_op_name
         torch.jit._builtins._register_builtin(op, qualified_op_name)
         op.__module__ = self.__module__ + "." + namespace_name
-        # opoverloadpacket = OpOverloadPacket(qualified_op_name, op_name, op)
-        # opoverloadpacket.__module__ = self.__module__ + "." + namespace_name
+        opoverloadpacket = OpOverloadPacket(qualified_op_name, op_name, op)
+        opoverloadpacket.__module__ = self.__module__ + "." + namespace_name
         # cache the opoverloadpacket to ensure that each op corresponds to
         # a unique OpOverloadPacket object
-        # setattr(self, op_name, opoverloadpacket)
-        setattr(self, op_name, op)
-        return op
+        setattr(self, op_name, opoverloadpacket)
+        return opoverloadpacket
 
 class _Ops(types.ModuleType):
     __file__ = '_ops.py'
